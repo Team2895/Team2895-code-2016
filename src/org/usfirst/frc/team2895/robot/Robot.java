@@ -7,6 +7,7 @@ import edu.wpi.first.wpilibj.vision.*;
 import com.ni.vision.NIVision;
 import com.ni.vision.NIVision.*;
 import edu.wpi.first.wpilibj.*;
+import edu.wpi.first.wpilibj.interfaces.Gyro;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 
 public class Robot extends SampleRobot {
@@ -14,11 +15,15 @@ public class Robot extends SampleRobot {
     Joystick robotDriver;
     Joystick mechDriver;
     VictorSP mech;
+    VictorSP teleMech;
     USBCamera cameraFront;
     USBCamera cameraMoveable;
     Servo camLeftRight;
     Servo camUpDown;
-    DigitalInput topSwitch;
+    DigitalInput intakeLimit;
+    private Gyro gyro;
+    
+    Double ang = 0.45;
     int session;
     Image img = NIVision.imaqCreateImage(NIVision.ImageType.IMAGE_RGB, 0);
     Boolean camLeftValue;
@@ -28,17 +33,22 @@ public class Robot extends SampleRobot {
 	public static USBCamera camBack;
 	static boolean rearCam = false; // stores whether the front camera is on
 	static boolean frontCam = false; // stores whether the front camera is on
+	static boolean camSwitch = false; // stores whether the front camera is on
     
 
     public Robot() {
         drive = new RobotDrive(0, 1);
         drive.setExpiration(0.1);
+        
         robotDriver = new Joystick(0);
         mechDriver = new Joystick(1);
         mech = new VictorSP(3);
+        teleMech = new VictorSP(4);
         camLeftRight = new Servo(5);
         camUpDown = new Servo(6);
-        topSwitch = new DigitalInput(1); 
+        intakeLimit = new DigitalInput(1); 
+        gyro = new AnalogGyro(0);
+        
         camLeftValue = false;
         camServer = CameraServer.getInstance();
         camServer.setQuality(100);
@@ -48,20 +58,21 @@ public class Robot extends SampleRobot {
         cameraMoveable.openCamera();
         cameraFront.startCapture();
         
-        
-
+        SmartDashboard.putNumber("Gyro", gyro.getRate());
+    
     }
 
     /**
      * Drive left & right motors for 2 seconds then stop
      */
     public void autonomous() {
-        drive.setSafetyEnabled(false);
+        drive.setSafetyEnabled(true);
         /*
         drive.drive(-0.5, 0.0);	// drive forwards half speed
         Timer.delay(3.0);		//    for 2 seconds
         drive.drive(0.0, 0.0);	// stop robot
         */
+        
         mech.set(1.0);
     }
 
@@ -69,11 +80,21 @@ public class Robot extends SampleRobot {
      * Runs the motors with arcade steering.
      */
     public void operatorControl() {
-
-        drive.setSafetyEnabled(true);
-        while (isOperatorControl() && isEnabled()) {
+        while (isEnabled() && isOperatorControl()) {
+        	drive.setSafetyEnabled(true);
             drive.arcadeDrive(robotDriver); // drive with arcade style (use right stick)   
-            
+			intakeMech();
+            switchCamera();
+            camBracket();
+            telescopeMech();    
+            Timer.delay(0.001);		// wait for a motor update time
+        }
+       
+    }
+    
+    
+    public void switchCamera(){
+    	if(camSwitch){
 			try {
 				// camera streaming
 				if (rearCam) {
@@ -88,17 +109,15 @@ public class Robot extends SampleRobot {
 				//RobotMap.haveCam = false;
 				System.out.println("You don't have camera!");
 			}
-			
-            switchCamera();
-            camBracket();
-            intakeMech();
-            Timer.delay(0.001);		// wait for a motor update time
-        }
-       
-    }
-    
-    
-    public void switchCamera(){
+			}
+    	
+    	if(mechDriver.getRawButton(4) && camSwitch == true){
+    		camSwitch = false;
+    	}else if(mechDriver.getRawButton(1) && camSwitch == false){
+    		camSwitch = true;
+    	}
+    	
+        
     	if(mechDriver.getRawButton(3)){
     		rearCam = false;
     		frontCam = true;
@@ -113,10 +132,25 @@ public class Robot extends SampleRobot {
     	}
     }
     
+    public void telescopeMech(){
+    	if(robotDriver.getRawButton(4)){
+    		teleMech.set(1.0);
+    	}else{
+    		teleMech.set(0.0);
+    	}
+    	
+    	if(robotDriver.getRawButton(1)){
+    		teleMech.set(-1.0);
+    	}else{
+    		teleMech.set(0.0);
+    	}
+    	 SmartDashboard.putNumber("Telescope Mechanism Motor Speed", teleMech.getSpeed());
+    }
+    
     public void intakeMech(){
         if(mechDriver.getRawButton(6)){
         
-        	if(topSwitch.get()){
+        	if(intakeLimit.get()){
         		mech.set(0.0);
         	}else{
         		mech.set(1.0);
@@ -131,7 +165,8 @@ public class Robot extends SampleRobot {
         	mech.set(0.0);
         }
         
-    	
+        
+        SmartDashboard.putNumber("Mechanism Motor Speed", mech.getSpeed());
     }
     
     public void camBracket(){
